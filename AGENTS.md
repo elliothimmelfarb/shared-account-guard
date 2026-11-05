@@ -16,7 +16,6 @@ A TypeScript library and guide for running several apps on one Stripe or Resend 
 
 ## Rules
 
-- This repository is private. Never change its visibility or publish the package.
 - Use fictional apps and example domains only (`fernbank`, `tidepool`, `lanternworks`, `.example`). Never add a real project name, account, ID, domain or key. Run `gitleaks detect --source .` before pushing.
 - `src/` has no runtime dependencies and imports no Node modules. It uses Web Crypto so it runs on edge runtimes. `stripe` and `svix` are for tests only.
 - Guards verify, then parse, then classify, in that order. Never reorder this.
