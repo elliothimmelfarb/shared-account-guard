@@ -20,10 +20,14 @@ function repeated(values: string[]): string[] {
   return [...new Set(values.filter((value, index) => values.indexOf(value) !== index))];
 }
 
+const domain = (value: string) => value.trim().toLowerCase();
+/** URL parsing lowers the host and keeps the path's case, because paths are case sensitive. */
+const webhook = (value: string) => (URL.canParse(value) ? new URL(value).href : value);
+
 /** Returns one sentence per problem, or an empty list when the registry is sound. */
 export function checkRegistry(registry: Registry): string[] {
   const problems: string[] = [];
-  const shared = new Set(registry.resend?.sharedSendingDomains ?? []);
+  const shared = new Set((registry.resend?.sharedSendingDomains ?? []).map(domain));
   const { apps } = registry;
 
   for (const app of apps) {
@@ -31,18 +35,18 @@ export function checkRegistry(registry: Registry): string[] {
   }
   for (const id of repeated(apps.map((app) => app.id))) problems.push(`App id ${id} appears twice.`);
 
-  const webhooks = apps.flatMap((app) => [app.stripe?.webhook, app.resend?.webhook]).filter((url) => url !== undefined);
+  const webhooks = apps.flatMap((app) => [app.stripe?.webhook, app.resend?.webhook]).filter((url) => url !== undefined).map(webhook);
   for (const url of repeated(webhooks)) problems.push(`The webhook ${url} is registered twice.`);
 
-  const receiving = apps.flatMap((app) => app.resend?.receivingDomains ?? []);
-  for (const domain of repeated(receiving)) problems.push(`Two apps are receiving on ${domain}.`);
-  for (const domain of receiving) {
-    if (shared.has(domain)) problems.push(`${domain} is a shared sending domain, so no app can own its inbound mail.`);
+  const receiving = apps.flatMap((app) => app.resend?.receivingDomains ?? []).map(domain);
+  for (const name of repeated(receiving)) problems.push(`Two apps are receiving on ${name}.`);
+  for (const name of receiving) {
+    if (shared.has(name)) problems.push(`${name} is a shared sending domain, so no app can own its inbound mail.`);
   }
 
-  const sending = apps.flatMap((app) => app.resend?.sendingDomains ?? []);
-  for (const domain of repeated(sending)) {
-    if (!shared.has(domain)) problems.push(`Two apps send from ${domain}, but it is not listed as shared.`);
+  const sending = apps.flatMap((app) => app.resend?.sendingDomains ?? []).map(domain);
+  for (const name of repeated(sending)) {
+    if (!shared.has(name)) problems.push(`Two apps send from ${name}, but it is not listed as shared.`);
   }
   return problems;
 }

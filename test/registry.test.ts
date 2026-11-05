@@ -38,6 +38,37 @@ describe("checkRegistry", () => {
   });
 });
 
+describe("checkRegistry ignores case, as the guards do", () => {
+  it("flags two apps receiving on one domain written in different case", () => {
+    const reg = clone();
+    reg.apps[1]!.resend!.receivingDomains = reg.apps[0]!.resend!.receivingDomains.map((d) => d.toUpperCase());
+    expect(checkRegistry(reg).join()).toMatch(/receiving/);
+  });
+
+  it("flags two apps sending from one domain written in different case", () => {
+    const reg = clone();
+    reg.apps[1]!.resend!.sendingDomains = reg.apps[0]!.resend!.sendingDomains.map((d) => d.toUpperCase());
+    expect(checkRegistry(reg).join()).toMatch(/not listed as shared/);
+  });
+
+  it("sees a shared domain in any case, in both directions", () => {
+    const reg = clone();
+    const shared = reg.resend!.sharedSendingDomains![0]!;
+    reg.resend!.sharedSendingDomains = [shared.toUpperCase()];
+    reg.apps[0]!.resend!.receivingDomains = [shared];
+    expect(checkRegistry(reg).join()).toMatch(/no app can own/);
+  });
+
+  it("flags a webhook host written in different case, but not a different path", () => {
+    const reg = clone();
+    reg.apps[0]!.stripe!.webhook = "https://Hooks.fernbank.example/stripe";
+    reg.apps[1]!.stripe!.webhook = "https://hooks.fernbank.example/stripe";
+    expect(checkRegistry(reg).join()).toMatch(/registered twice/);
+    reg.apps[1]!.stripe!.webhook = "https://hooks.fernbank.example/Stripe";
+    expect(checkRegistry(reg).join()).not.toMatch(/registered twice/);
+  });
+});
+
 describe("resendOptionsFor", () => {
   it("builds guard options from the registry, including the shared domains", () => {
     const options = resendOptionsFor(example, example.apps[0]!.id);
