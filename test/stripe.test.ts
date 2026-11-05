@@ -244,3 +244,32 @@ describe("S2: an unclaimed payload never reaches a log", () => {
     expect(r.claim().data?.object).toMatchObject({ receipt_email: "customer@tidepool.example" });
   });
 });
+
+describe("S6: hardening", () => {
+  const ours = stripeEvent({ metadata: { app } });
+
+  it.each(["  ", "whsec_ ", "whsec_\n", "whsec_", " whsec_ \t"])("refuses the blank secret %j", async (secret) => {
+    await expect(guard(ours, stripeHeader(ours, secret.trim() || "x"), { secret })).rejects.toThrow(/secret/);
+  });
+
+  it.each([NaN, Infinity, -Infinity, -1])("refuses a tolerance of %s, which would turn off the replay check", async (t) => {
+    await expect(guard(ours, stripeHeader(ours), { toleranceSeconds: t })).rejects.toThrow(/tolerance/);
+  });
+
+  it("returns a result that cannot be misread as true on failure", async () => {
+    expect(await verifyStripeSignature(ours, stripeHeader(ours), STRIPE_SECRET, { nowSeconds: NOW })).toEqual({ ok: true });
+    expect(await verifyStripeSignature(ours, "t=1,v1=" + "0".repeat(64), STRIPE_SECRET, { nowSeconds: NOW })).toEqual({
+      ok: false,
+      reason: "bad-signature",
+    });
+  });
+
+  it("strips control characters from a foreign tag before it reaches a log", () => {
+    const c = classifyStripeObject({ metadata: { app: "evil\n[INFO] forged\u2028line\u0007" } }, { app });
+    expect(c).toMatchObject({ verdict: "foreign", reason: "tagged for evil[INFO] forgedline" });
+  });
+
+  it("caps a foreign tag in the reason", () => {
+    expect(classifyStripeObject({ metadata: { app: "x".repeat(600) } }, { app }).reason.length).toBeLessThan(100);
+  });
+});

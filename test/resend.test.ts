@@ -242,3 +242,30 @@ describe("S3: only the envelope decides, and only clean addresses count", () => 
     expect(classifyReceivedEmail({ to: ['"Doe, Jane" <j@in.fernbank.example>'] }, opts).verdict).toBe("ours");
   });
 });
+
+describe("S6: hardening", () => {
+  const ours = JSON.stringify(received({ to: ["a@in.fernbank.example"] }));
+
+  it.each([
+    ["ours first", [{ name: "app", value: "fernbank" }, { name: "app", value: "tidepool" }]],
+    ["ours last", [{ name: "app", value: "tidepool" }, { name: "app", value: "fernbank" }]],
+  ])("treats conflicting tags as foreign, %s", (_name, tags) => {
+    expect(classifySentEmail({ tags }, opts).verdict).toBe("foreign");
+  });
+
+  it("strips control characters from a foreign tag before it reaches a log", () => {
+    const c = classifySentEmail({ tags: { app: "evil\r\n[INFO] forged" } }, opts);
+    expect(c.reason).toBe("tagged for evil[INFO] forged");
+  });
+
+  it("returns a result that cannot be misread as true on failure", async () => {
+    const good = await verifyResendSignature(ours, svixHeaders(ours), RESEND_SECRET, { nowSeconds: NOW });
+    expect(good).toEqual({ ok: true });
+    const bad = await verifyResendSignature(ours, svixHeaders("{}"), RESEND_SECRET, { nowSeconds: NOW });
+    expect(bad).toEqual({ ok: false, reason: "bad-signature" });
+  });
+
+  it.each([NaN, Infinity])("refuses a tolerance of %s", async (toleranceSeconds) => {
+    await expect(guard(ours, svixHeaders(ours), { toleranceSeconds })).rejects.toThrow(/tolerance/);
+  });
+});

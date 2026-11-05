@@ -10,9 +10,10 @@ import {
   isRawBody,
   isRecord,
   parseJson,
-  type RejectReason,
+  printableTag,
   toBytes,
   toGuardResult,
+  type VerifyResult,
 } from "./common.js";
 
 export interface StripeGuardOptions {
@@ -120,11 +121,15 @@ export function classifyStripeObject(object: unknown, options: StripeGuardOption
   if (!isRecord(object)) return { verdict: "untagged", reason: "no object to read", lookup: {} };
   const tags = tagsOn(object, options.tagKey ?? DEFAULT_TAG_KEY);
   const other = tags.find((tag) => tag !== options.app);
-  if (other !== undefined) return { verdict: "foreign", reason: `tagged for ${other}` };
+  if (other !== undefined) return { verdict: "foreign", reason: `tagged for ${printableTag(other)}` };
   if (tags.length > 0) return { verdict: "ours", reason: "tag matches" };
   return { verdict: "untagged", reason: "object carries no app tag", lookup: lookupIds(object) };
 }
 
+/**
+ * Classifies by metadata alone. `event.account` is out of scope: on a Connect webhook, an event
+ * from a connected account says nothing here about which connected account sent it.
+ */
 export function classifyStripeEvent(event: StripeEventLike, options: StripeGuardOptions): Classification {
   if (event.object === "v2.core.event") {
     const id = isRecord(event.related_object) ? event.related_object.id : undefined;
@@ -153,21 +158,21 @@ function hexToBytes(hex: string): Uint8Array | null {
 }
 
 /**
- * Stripe's manual verification, with no SDK. Returns null when the signature is
- * good. Only `v1` counts: any other scheme is skipped to prevent a downgrade.
+ * Stripe's manual verification, with no SDK. Only `v1` counts: any other scheme
+ * is skipped to prevent a downgrade.
  */
 export async function verifyStripeSignature(
   rawBody: string | Uint8Array,
   header: string | null | undefined,
   secret: string,
   options: StripeVerifyOptions = {},
-): Promise<RejectReason | null> {
-  if (!secret || secret.trim() === "" || secret === "whsec_") {
+): Promise<VerifyResult> {
+  if (!secret || secret.trim().replace(/^whsec_/, "").trim() === "") {
     throw new Error("The Stripe webhook secret is empty. Check the app's environment.");
   }
   const tolerance = options.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS;
   assertTolerance(tolerance);
-  if (!header) return "missing-signature";
+  if (!header) return { ok: false, reason: "missing-signature" };
 
   let timestamp: string | undefined;
   const candidates: Uint8Array[] = [];
@@ -181,13 +186,15 @@ export async function verifyStripeSignature(
       if (bytes) candidates.push(bytes);
     }
   }
-  if (timestamp === undefined || !/^\d+$/.test(timestamp) || candidates.length === 0) return "bad-signature";
+  if (timestamp === undefined || !/^\d+$/.test(timestamp) || candidates.length === 0) {
+    return { ok: false, reason: "bad-signature" };
+  }
 
   const message = concatBytes(toBytes(`${timestamp}.`), toBytes(rawBody));
-  if (!(await anyHmacMatches(toBytes(secret), message, candidates))) return "bad-signature";
+  if (!(await anyHmacMatches(toBytes(secret), message, candidates))) return { ok: false, reason: "bad-signature" };
 
   const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
-  return Math.abs(now - Number(timestamp)) > tolerance ? "stale-timestamp" : null;
+  return Math.abs(now - Number(timestamp)) > tolerance ? { ok: false, reason: "stale-timestamp" } : { ok: true };
 }
 
 export interface StripeWebhookInput extends StripeGuardOptions, StripeVerifyOptions {
@@ -202,8 +209,8 @@ export interface StripeWebhookInput extends StripeGuardOptions, StripeVerifyOpti
 /** Verifies, then parses, then decides whose event it is, in that order. */
 export async function guardStripeWebhook(input: StripeWebhookInput): Promise<GuardResult<StripeEventLike>> {
   if (!isRawBody(input.rawBody)) return { action: "reject", status: 400, reason: "body-not-raw" };
-  const failure = await verifyStripeSignature(input.rawBody, input.signature, input.secret, input);
-  if (failure) return { action: "reject", status: 400, reason: failure };
+  const check = await verifyStripeSignature(input.rawBody, input.signature, input.secret, input);
+  if (!check.ok) return { action: "reject", status: 400, reason: check.reason };
   const parsed = parseJson(input.rawBody);
   if (!parsed.ok) return { action: "reject", status: 400, reason: "malformed-json" };
   const event = parsed.value as StripeEventLike;

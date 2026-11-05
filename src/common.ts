@@ -15,6 +15,9 @@ export type RejectReason =
   | "body-not-raw"
   | "malformed-json";
 
+/** What a signature check found. A plain null or string here was too easy to read backwards. */
+export type VerifyResult = { ok: true } | { ok: false; reason: RejectReason };
+
 export type GuardResult<E> =
   /** Reply with `status`. The sender retries, so a real event is not lost to a misconfigured route. */
   | { action: "reject"; status: 400; reason: RejectReason }
@@ -58,9 +61,14 @@ export const DEFAULT_TAG_KEY = "app";
 export const DEFAULT_TOLERANCE_SECONDS = 300;
 
 export function assertTolerance(seconds: number): void {
-  if (!(seconds > 0)) {
-    throw new Error("The timestamp tolerance must be above 0, because 0 turns off the replay check.");
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error("The timestamp tolerance must be a finite number above 0, or the replay check turns off.");
   }
+}
+
+/** A tag value is written by whichever app tagged the object, so it must not be able to forge a log line. */
+export function printableTag(tag: string): string {
+  return tag.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "").slice(0, 64);
 }
 
 export function isRawBody(body: unknown): body is string | Uint8Array {

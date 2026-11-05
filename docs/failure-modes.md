@@ -104,9 +104,10 @@ The guard decides on `received_for` alone when it is present, and otherwise on `
 
 - **Parsed bodies.** Signatures cover the exact bytes. Read the raw body before any JSON middleware. The guard rejects a parsed object.
 - **An empty secret.** An unset environment variable can turn into an empty signing key, and anyone can sign with that. The guard throws instead of running.
-- **Tolerance of 0.** Stripe says this turns off the recency check. The guard refuses it.
+- **Tolerance of 0.** Stripe says this turns off the recency check. The guard refuses it, and also refuses a tolerance that is not a finite number.
 - **Duplicates.** Stripe can deliver one event twice, and sometimes sends two separate events for one change. Track event ids, and for the second case compare the `data.object` id and the event type. Stripe also does not guarantee order. Resend retries reuse the same `svix-id`.
 - **Dots in app ids.** Stripe accepts them in metadata, but Resend rejects them in tag values, so a dotted id works on one account and fails on the other.
+- **Stripe Connect.** Each event for a connected account has a top-level `account` property. The guard ignores it and classifies by metadata alone, so a Connect webhook is out of scope for this library.
 - **A new event subscription.** Adding an event type to an existing endpoint can bring in events your handler never saw from other apps. Run the filter on everything, not only on the events you expect.
 
 ## Adding an app
@@ -129,6 +130,7 @@ Checked on 2026-11-05 against the providers' documentation, with `stripe` 23.1.0
 | --- | --- |
 | Signature format, `v1` only, raw body, 5 minute library default, tolerance of 0 disables the check | [Stripe webhooks](https://docs.stripe.com/webhooks) |
 | Retries for up to 3 days in live mode, no ordering guarantee, duplicates | [Stripe webhooks](https://docs.stripe.com/webhooks) |
+| Connected account events carry a top-level `account` property | [Connect webhooks](https://docs.stripe.com/connect/webhooks) |
 | Limit of 16 event destinations, thin event contents | [How events work](https://docs.stripe.com/events/how-events-work) |
 | Metadata does not copy apart from listed exceptions, limits, redaction for publishable keys | [Metadata](https://docs.stripe.com/metadata) |
 | `payment_intent_data` is for payment mode, `subscription_data` for subscription mode | [Create a Checkout Session](https://docs.stripe.com/api/checkout/sessions/create) |

@@ -10,9 +10,10 @@ import {
   isRawBody,
   isRecord,
   parseJson,
-  type RejectReason,
+  printableTag,
   toBytes,
   toGuardResult,
+  type VerifyResult,
 } from "./common.js";
 
 export interface ResendGuardOptions {
@@ -100,25 +101,20 @@ export function classifyReceivedEmail(email: Record<string, unknown>, options: R
     : { verdict: "foreign", reason: "no recipient on our receiving domains" };
 }
 
-function tagValue(tags: unknown, tagName: string): string | null {
+function tagValues(tags: unknown, tagName: string): string[] {
   // Webhooks send tags as a map. The retrieve endpoint returns a list of name and value.
-  if (Array.isArray(tags)) {
-    const found = tags.find((tag) => isRecord(tag) && tag.name === tagName) as ResendTag | undefined;
-    return typeof found?.value === "string" && found.value !== "" ? found.value : null;
-  }
-  if (!isRecord(tags)) return null;
-  const value = tags[tagName];
-  return typeof value === "string" && value !== "" ? value : null;
+  const values = Array.isArray(tags)
+    ? tags.filter((tag) => isRecord(tag) && tag.name === tagName).map((tag) => (tag as { value?: unknown }).value)
+    : [isRecord(tags) ? tags[tagName] : undefined];
+  return values.filter((value) => typeof value === "string" && value !== "") as string[];
 }
 
 /** Outbound mail: the tag decides when there is one, otherwise a domain only this app uses. */
 export function classifySentEmail(email: Record<string, unknown>, options: ResendGuardOptions): Classification {
-  const tag = tagValue(email.tags, options.tagName ?? DEFAULT_TAG_KEY);
-  if (tag !== null) {
-    return tag === options.app
-      ? { verdict: "ours", reason: "tag matches" }
-      : { verdict: "foreign", reason: `tagged for ${tag}` };
-  }
+  const tags = tagValues(email.tags, options.tagName ?? DEFAULT_TAG_KEY);
+  const other = tags.find((tag) => tag !== options.app);
+  if (other !== undefined) return { verdict: "foreign", reason: `tagged for ${printableTag(other)}` };
+  if (tags.length > 0) return { verdict: "ours", reason: "tag matches" };
   const domain = typeof email.from === "string" ? domainOf(email.from) : null;
   if (domain === null) return { verdict: "untagged", reason: "no from address" };
   if (lowered(options.sharedSendingDomains).has(domain)) {
@@ -168,13 +164,13 @@ export interface ResendVerifyOptions {
   nowSeconds?: number | undefined;
 }
 
-/** Resend signs with Svix. This is Svix's manual check, with no SDK. Returns null when good. */
+/** Resend signs with Svix. This is Svix's manual check, with no SDK. */
 export async function verifyResendSignature(
   rawBody: string | Uint8Array,
   headers: HeadersLike,
   secret: string,
   options: ResendVerifyOptions = {},
-): Promise<RejectReason | null> {
+): Promise<VerifyResult> {
   const key = base64ToBytes(secret.trim().replace(/^whsec_/, ""));
   if (!key || key.length === 0) {
     throw new Error("The Resend webhook secret is empty or malformed. Check the app's environment.");
@@ -185,21 +181,21 @@ export async function verifyResendSignature(
   const id = header(headers, "svix-id");
   const timestamp = header(headers, "svix-timestamp");
   const signatures = header(headers, "svix-signature");
-  if (!id || !timestamp || !signatures) return "missing-signature";
-  if (!/^\d+$/.test(timestamp)) return "bad-signature";
+  if (!id || !timestamp || !signatures) return { ok: false, reason: "missing-signature" };
+  if (!/^\d+$/.test(timestamp)) return { ok: false, reason: "bad-signature" };
 
   const candidates = signatures
     .split(" ")
     .filter((entry) => entry.startsWith("v1,"))
     .map((entry) => base64ToBytes(entry.slice(3)))
     .filter((bytes) => bytes !== null);
-  if (candidates.length === 0) return "bad-signature";
+  if (candidates.length === 0) return { ok: false, reason: "bad-signature" };
 
   const message = concatBytes(toBytes(`${id}.${timestamp}.`), toBytes(rawBody));
-  if (!(await anyHmacMatches(key, message, candidates))) return "bad-signature";
+  if (!(await anyHmacMatches(key, message, candidates))) return { ok: false, reason: "bad-signature" };
 
   const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
-  return Math.abs(now - Number(timestamp)) > tolerance ? "stale-timestamp" : null;
+  return Math.abs(now - Number(timestamp)) > tolerance ? { ok: false, reason: "stale-timestamp" } : { ok: true };
 }
 
 export interface ResendWebhookInput extends ResendGuardOptions, ResendVerifyOptions {
@@ -216,8 +212,8 @@ export type ResendGuardResult = GuardResult<ResendEventLike> & { deliveryId?: st
 /** Verifies, then parses, then decides whose event it is, in that order. */
 export async function guardResendWebhook(input: ResendWebhookInput): Promise<ResendGuardResult> {
   if (!isRawBody(input.rawBody)) return { action: "reject", status: 400, reason: "body-not-raw" };
-  const failure = await verifyResendSignature(input.rawBody, input.headers, input.secret, input);
-  if (failure) return { action: "reject", status: 400, reason: failure };
+  const check = await verifyResendSignature(input.rawBody, input.headers, input.secret, input);
+  if (!check.ok) return { action: "reject", status: 400, reason: check.reason };
   const parsed = parseJson(input.rawBody);
   if (!parsed.ok) return { action: "reject", status: 400, reason: "malformed-json" };
   const event = parsed.value as ResendEventLike;

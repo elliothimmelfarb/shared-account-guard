@@ -88,6 +88,8 @@ if (result.action === "ignore" && result.verdict === "untagged" && result.lookup
 
 Do not call `claim()` until you have proven ownership. It may be another app's data, including a customer's name and address, so do not log what it returns. A spread copy of the result has no `claim()`, which is why it fails loudly instead of carrying the payload along.
 
+The tag alone cannot prove every case, so do not treat this sample as complete. A refund or dispute on a subscription renewal points at a renewal PaymentIntent, and that PaymentIntent does not get the subscription's metadata, so the check above stays `untagged` for your own customer. Follow the payment through its invoice to the subscription and classify that. If you cannot prove the owner, do not drop the event silently: record its `eventId` and `lookup` so a person can look, and leave the payload unclaimed.
+
 ## Guard a Resend webhook
 
 Resend events are sorted by recipient for inbound mail and by tag or sending domain for delivery events.
@@ -139,6 +141,7 @@ const mail = onlyOurReceivedEmails(inbound?.data ?? [], resendOptions);
 - It does not protect you from another app on the account behaving badly, because any app can write any tag.
 - It does not remove duplicates. Use `eventId` or `deliveryId` for that.
 - It does not separate Resend's suppression list, which covers the whole team.
+- It does not cover Stripe Connect. It reads metadata and ignores `event.account`, so it cannot tell connected accounts apart.
 
 If two apps need a real wall between them, give them separate accounts.
 
