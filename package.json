@@ -1,0 +1,38 @@
+{
+  "name": "shared-account-guard",
+  "version": "0.1.0",
+  "description": "Keep several apps on one Stripe or Resend account from seeing each other's events and data.",
+  "private": true,
+  "license": "MIT",
+  "author": "Elliot Himmelfarb",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "stripe": "^23.1.0",
+    "svix": "^2.9.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}

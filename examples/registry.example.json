@@ -1,0 +1,41 @@
+{
+  "tagKey": "app",
+  "resend": {
+    "sharedSendingDomains": ["mail.northwind-studio.example"]
+  },
+  "apps": [
+    {
+      "id": "fernbank",
+      "description": "Plant subscription boxes. Takes subscriptions and receives support mail.",
+      "stripe": {
+        "webhook": "https://fernbank.example/api/webhooks/stripe"
+      },
+      "resend": {
+        "webhook": "https://fernbank.example/api/webhooks/resend",
+        "receivingDomains": ["in.fernbank.example"],
+        "sendingDomains": ["fernbank.example"]
+      }
+    },
+    {
+      "id": "tidepool",
+      "description": "Tide-table app. Sells one-time purchases and sends receipts, but receives no mail.",
+      "stripe": {
+        "webhook": "https://tidepool.example/api/webhooks/stripe"
+      },
+      "resend": {
+        "webhook": "https://tidepool.example/api/webhooks/resend",
+        "receivingDomains": [],
+        "sendingDomains": ["mail.northwind-studio.example"]
+      }
+    },
+    {
+      "id": "lanternworks",
+      "description": "Workshop bookings. Sends from the shared studio domain and tags every message.",
+      "resend": {
+        "webhook": "https://lanternworks.example/api/webhooks/resend",
+        "receivingDomains": ["bookings.lanternworks.example"],
+        "sendingDomains": ["mail.northwind-studio.example"]
+      }
+    }
+  ]
+}
