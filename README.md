@@ -56,7 +56,11 @@ export async function POST(request: Request) {
     app: "fernbank",
   });
 
-  if (result.action === "handle") await fulfil(result.event);
+  if (result.action === "handle") {
+    // Stripe can deliver one event twice. firstDelivery records the id under a unique
+    // constraint and returns false if it was already there.
+    if (await firstDelivery(result.eventId)) await fulfil(result.event);
+  }
   return new Response(null, { status: result.status });
 }
 ```
@@ -101,12 +105,15 @@ export async function POST(request: Request) {
     sendingDomains: ["fernbank.example"],
   });
 
-  if (result.action === "handle") await process(result.event, result.deliveryId);
+  if (result.action === "handle") {
+    // Resend retries with the same svix-id, so a retry stops here.
+    if (await firstDelivery(result.deliveryId)) await process(result.event);
+  }
   return new Response(null, { status: result.status });
 }
 ```
 
-Domains match exactly, so list each subdomain. `deliveryId` is the `svix-id` header, which you can use to skip duplicates.
+Domains match exactly, so list each subdomain. `deliveryId` is the `svix-id` header. Both ids in these samples are typed as optional, so make `firstDelivery` treat a missing id as a failure, not as a new event.
 
 ## Filter list results
 
