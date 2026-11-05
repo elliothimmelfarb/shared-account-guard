@@ -209,3 +209,36 @@ describe("S2: an unclaimed payload never reaches a log", () => {
     expect(r.claim().data).toMatchObject({ to: ["private@customer.example"] });
   });
 });
+
+describe("S3: only the envelope decides, and only clean addresses count", () => {
+  it("lets received_for overrule a To header the sender wrote", () => {
+    const email = { to: ["z@in.fernbank.example"], received_for: ["help@in.tidepool.example"] };
+    expect(classifyReceivedEmail(email, opts).verdict).toBe("foreign");
+  });
+
+  it("does not read headers when received_for is present", () => {
+    const email = { to: ["help@in.tidepool.example"], cc: ["z@in.fernbank.example"], received_for: ["a@tidepool.example"] };
+    expect(classifyReceivedEmail(email, opts).verdict).toBe("foreign");
+  });
+
+  it("still uses headers when received_for is empty", () => {
+    expect(classifyReceivedEmail({ to: ["z@in.fernbank.example"], received_for: [] }, opts).verdict).toBe("ours");
+  });
+
+  it.each([
+    ["two brackets", "Evil <z@in.fernbank.example> <x@tidepool.example>"],
+    ["a second address in the display name", "x@tidepool.example <z@in.fernbank.example>"],
+    ["a comma list", "x@tidepool.example, y@in.fernbank.example"],
+    ["a comma list with brackets", 'x@tidepool.example, "b" <y@in.fernbank.example>'],
+    ["a double at sign", "x@tidepool.example@in.fernbank.example"],
+    ["junk after a bracket", "<x@tidepool.example>y@in.fernbank.example"],
+    ["a space in the address", "x y@in.fernbank.example"],
+  ])("does not claim %s", (_name, to) => {
+    expect(classifyReceivedEmail({ to: [to] }, opts).verdict).toBe("foreign");
+    expect(classifyReceivedEmail({ received_for: [to] }, opts).verdict).toBe("foreign");
+  });
+
+  it("keeps accepting a quoted display name with a comma", () => {
+    expect(classifyReceivedEmail({ to: ['"Doe, Jane" <j@in.fernbank.example>'] }, opts).verdict).toBe("ours");
+  });
+});

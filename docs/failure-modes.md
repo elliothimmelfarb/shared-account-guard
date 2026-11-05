@@ -91,7 +91,7 @@ Resend receives mail for any address at a domain. The recipient's domain is the 
 
 Domains match exactly. `in.fernbank.example` does not cover `other.fernbank.example`, and a lookalike such as `notin.fernbank.example` does not match.
 
-The guard checks `to`, `cc`, `bcc` and `received_for`. Treat these as hints about routing and not as proof. The `to` and `cc` values appear to come from the message headers, which the sender writes. So a sender may be able to reach tidepool's inbox with a `To:` line naming fernbank, in which case fernbank's handler would claim it. This is an inference, and it has not been tested. Treat inbound mail as untrusted input in every app.
+The guard decides on `received_for` alone when it is present, and otherwise on `to`, `cc` and `bcc`. A value that is not exactly one clean address counts for nothing. Treat the headers as hints about routing and not as proof. The `to` and `cc` values appear to come from the message headers, which the sender writes. So where `received_for` is missing, a sender may be able to reach tidepool's inbox with a `To:` line naming fernbank, in which case fernbank's handler would claim it. This is an inference, and it has not been tested. Treat inbound mail as untrusted input in every app.
 
 ## 7. Some things are shared and cannot be split
 

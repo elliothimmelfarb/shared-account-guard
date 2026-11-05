@@ -60,16 +60,21 @@ export function tagResendEmail<P extends { tags?: ResendTag[] | undefined }>(
   return { ...params, tags: [...rest, tag as ResendTag] };
 }
 
-/** `Name <a@b.example>` or `a@b.example` to `a@b.example`. A display name never counts. */
-function addressOf(value: string): string {
-  const bracketed = value.match(/<([^<>]*)>\s*$/);
-  return (bracketed?.[1] ?? value).trim().toLowerCase();
+const ADDRESS = String.raw`[^\s<>@,;:"()]+@[^\s<>@,;:"()]+`;
+const ONE_ADDRESS = new RegExp(`^(?:(?:"[^"<>]*"\\s*|[^"<>@,;]*)<(${ADDRESS})>|(${ADDRESS}))$`);
+
+/**
+ * `Name <a@b.example>` or `a@b.example` to `a@b.example`. A display name never counts, and
+ * anything that is not exactly one clean address gives null, so a crafted value proves nothing.
+ */
+function addressOf(value: string): string | null {
+  const match = value.trim().match(ONE_ADDRESS);
+  return (match?.[1] ?? match?.[2])?.toLowerCase() ?? null;
 }
 
 function domainOf(value: string): string | null {
   const address = addressOf(value);
-  const at = address.lastIndexOf("@");
-  return at > 0 && at < address.length - 1 ? address.slice(at + 1) : null;
+  return address === null ? null : address.slice(address.lastIndexOf("@") + 1);
 }
 
 const lowered = (domains: readonly string[] | undefined) => new Set((domains ?? []).map((d) => d.toLowerCase()));
@@ -77,9 +82,13 @@ const lowered = (domains: readonly string[] | undefined) => new Set((domains ?? 
 const stringsIn = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 
-/** Inbound mail belongs to whichever app owns a recipient's domain. */
+/**
+ * Inbound mail belongs to whichever app owns a recipient's domain. `received_for` is the
+ * envelope, so it decides alone when present. `to` and `cc` are whatever the sender wrote.
+ */
 export function classifyReceivedEmail(email: Record<string, unknown>, options: ResendGuardOptions): Classification {
-  const recipients = ["to", "cc", "bcc", "received_for"].flatMap((field) => stringsIn(email[field]));
+  const envelope = stringsIn(email.received_for);
+  const recipients = envelope.length > 0 ? envelope : ["to", "cc", "bcc"].flatMap((field) => stringsIn(email[field]));
   if (recipients.length === 0) return { verdict: "untagged", reason: "no recipients on the message" };
   const ours = lowered(options.receivingDomains);
   const match = recipients.some((recipient) => {
