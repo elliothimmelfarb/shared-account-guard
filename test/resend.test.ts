@@ -8,6 +8,7 @@ import {
   onlyOurSentEmails,
   resendTags,
   tagResendEmail,
+  verifyResendSignature,
   type ResendGuardOptions,
 } from "../src/index.js";
 import { NOW, RESEND_SECRET, svixHeaders } from "./helpers.js";
@@ -196,5 +197,15 @@ describe("tagging outbound mail", () => {
 
   it("refuses an id with characters Resend rejects in tags", () => {
     expect(() => resendTags("fern.bank")).toThrow(/app id/);
+  });
+});
+
+describe("S2: an unclaimed payload never reaches a log", () => {
+  it("keeps a shared-domain recipient out of JSON and still carries the delivery id", async () => {
+    const r = await signed(bounced({ from: "hi@mail.studio.example", to: ["private@customer.example"] }));
+    expect(r).toMatchObject({ verdict: "untagged", deliveryId: "msg_test_1" });
+    expect(JSON.stringify(r)).not.toContain("private@customer.example");
+    if (r.action !== "ignore" || r.verdict !== "untagged") throw new Error("expected untagged");
+    expect(r.claim().data).toMatchObject({ to: ["private@customer.example"] });
   });
 });

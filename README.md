@@ -11,7 +11,7 @@ Read [docs/failure-modes.md](docs/failure-modes.md) before you put two apps on o
 - It tags objects with an app id, on Stripe metadata and on Resend tags.
 - It verifies the webhook signature first, then decides whose event it is, and always in that order.
 - It sorts each event into one of three verdicts: `ours`, `foreign` or `untagged`. Only `ours` reaches your handler.
-- It keeps a foreign event's payload out of the result, so it cannot end up in your logs or database by accident.
+- It keeps a foreign event's payload out of the result. An untagged event's payload sits behind `claim()`, which `JSON.stringify`, spreads and `console.log` skip, so logging a result does not log either payload. It cannot protect what you do after you call `claim()`.
 - It filters list results, because neither provider's list calls can filter by app.
 - It checks a registry file that records which app owns which domain and webhook.
 
@@ -81,12 +81,12 @@ Some Stripe objects never carry your tag, such as refunds and disputes, and thin
 if (result.action === "ignore" && result.verdict === "untagged" && result.lookup.payment_intent) {
   const intent = await stripe.paymentIntents.retrieve(result.lookup.payment_intent);
   if (classifyStripeObject(intent, { app: "fernbank" }).verdict === "ours") {
-    await recordRefund(result.unclaimedEvent);
+    await recordRefund(result.claim());
   }
 }
 ```
 
-Do not use `unclaimedEvent` until you have proven ownership. It may be another app's data.
+Do not call `claim()` until you have proven ownership. It may be another app's data, including a customer's name and address, so do not log what it returns. A spread copy of the result has no `claim()`, which is why it fails loudly instead of carrying the payload along.
 
 ## Guard a Resend webhook
 

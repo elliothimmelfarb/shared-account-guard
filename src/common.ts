@@ -29,7 +29,11 @@ export type GuardResult<E> =
       eventId?: string;
       eventType?: string;
       lookup: Record<string, string>;
-      unclaimedEvent: E;
+      /**
+       * The payload, which may be another app's personal data. Call this only after proving
+       * ownership. It is a non-enumerable function, so JSON, spreads and loggers skip it.
+       */
+      claim(): E;
     }
   /** This app's event, verified. */
   | { action: "handle"; status: 200; event: E; eventId?: string; eventType?: string };
@@ -124,13 +128,6 @@ export function toGuardResult<E extends { id?: unknown; type?: unknown }>(
   };
   if (c.verdict === "ours") return { action: "handle", status: 200, event, ...ids };
   if (c.verdict === "foreign") return { action: "ignore", status: 200, verdict: "foreign", reason: c.reason, ...ids };
-  return {
-    action: "ignore",
-    status: 200,
-    verdict: "untagged",
-    reason: c.reason,
-    lookup: c.lookup ?? {},
-    unclaimedEvent: event,
-    ...ids,
-  };
+  const untagged = { action: "ignore", status: 200, verdict: "untagged", reason: c.reason, lookup: c.lookup ?? {}, ...ids };
+  return Object.defineProperty(untagged, "claim", { value: () => event }) as unknown as GuardResult<E>;
 }

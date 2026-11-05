@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   classifyStripeEvent,
@@ -5,6 +6,7 @@ import {
   guardStripeWebhook,
   onlyOurStripeObjects,
   tagCheckoutSession,
+  verifyStripeSignature,
 } from "../src/index.js";
 import { NOW, STRIPE_SECRET, stripeEvent, stripeHeader } from "./helpers.js";
 
@@ -223,5 +225,22 @@ describe("tagCheckoutSession", () => {
 
   it("refuses an id Resend would reject, so the same id works on both accounts", () => {
     expect(() => tagCheckoutSession("fern.bank", { mode: "payment" })).toThrow(/app id/);
+  });
+});
+
+describe("S2: an unclaimed payload never reaches a log", () => {
+  const body = stripeEvent(
+    { object: "refund", metadata: {}, payment_intent: "pi_1", receipt_email: "customer@tidepool.example" },
+    "refund.created",
+  );
+
+  it("keeps it out of JSON, spreads and inspection, and hands it over on claim()", async () => {
+    const r = await signed(body);
+    expect(JSON.stringify(r)).not.toContain("customer@tidepool.example");
+    expect(JSON.stringify({ ...r })).not.toContain("customer@tidepool.example");
+    expect(inspect(r, { depth: null, showHidden: false })).not.toContain("customer@tidepool.example");
+    expect(structuredClone(r)).not.toHaveProperty("claim");
+    if (r.action !== "ignore" || r.verdict !== "untagged") throw new Error("expected untagged");
+    expect(r.claim().data?.object).toMatchObject({ receipt_email: "customer@tidepool.example" });
   });
 });

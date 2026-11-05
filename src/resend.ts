@@ -215,5 +215,6 @@ export async function guardResendWebhook(input: ResendWebhookInput): Promise<Res
   // Resend events have no id of their own. svix-id stays the same across retries.
   const deliveryId = header(input.headers, "svix-id");
   const result = toGuardResult(event, classifyResendEvent(event, input), { eventId: deliveryId });
-  return deliveryId ? { ...result, deliveryId } : result;
+  // Object.assign, because a spread would drop the non-enumerable claim().
+  return deliveryId ? Object.assign(result, { deliveryId }) : result;
 }
